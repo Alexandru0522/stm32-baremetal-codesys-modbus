@@ -1,174 +1,244 @@
 /**
- * @file    startup_stm32f103c8tx.c
- * @brief   STM32F103C8Tx Microcontroller Vector Table and Startup Code.
- * @note    Target: ARM Cortex-M3, bare-metal environment.
+ * @file    startup.c
+ * @brief   Production-Grade Bare-Metal Startup & Vector Table for STM32F103.
+ * @author  Turcu Alexandru-Costin
+ * @date    2026
  */
 
 #include <stdint.h>
 
 /* ========================================================================== */
-/*                   SIMBOLURI EXPORTATE DE LINKER SCRIPT                     */
+/*                           LINKER SYMBOL DECLARATIONS                       */
 /* ========================================================================== */
 
-extern uint32_t _estack;        /* Punctul de top al stivei (RAM End)        */
-extern uint32_t _sidata;        /* Adresa de start a .data în FLASH          */
-extern uint32_t _sdata;         /* Adresa de start a .data în RAM            */
-extern uint32_t _edata;         /* Adresa de sfârșit a .data în RAM          */
-extern uint32_t _sbss;          /* Adresa de start a .bss în RAM             */
-extern uint32_t _ebss;          /* Adresa de sfârșit a .bss în RAM           */
+extern uint32_t _estack;
+extern uint32_t _sidata;
+extern uint32_t _sdata;
+extern uint32_t _edata;
+extern uint32_t _sbss;
+extern uint32_t _ebss;
 
-/* ========================================================================== */
-/*                       PROTOTIPURI DE FUNCȚII                               */
-/* ========================================================================== */
-
+/* Standard C library constructor initializer array hook */
+extern void __libc_init_array(void);
 extern int main(void);
-extern void SystemInit(void) __attribute__((weak));
+
+/* Weak fallback for __libc_init_array when linking with -nostdlib */
+void __attribute__((weak)) __libc_init_array(void) {}
+
+/* ========================================================================== */
+/*                       FUNCTION PROTOTYPES & ALIASES                        */
+/* ========================================================================== */
 
 void Reset_Handler(void);
 void Default_Handler(void);
+void HardFault_Handler_C(uint32_t *pulFaultArgs);
 
-/* Prototipuri Excepții Cortex-M3 Core (Weak Aliases) */
-void NMI_Handler(void)          __attribute__((weak, alias("Default_Handler")));
-void HardFault_Handler(void)    __attribute__((weak, alias("Default_Handler")));
-void MemManage_Handler(void)    __attribute__((weak, alias("Default_Handler")));
-void BusFault_Handler(void)     __attribute__((weak, alias("Default_Handler")));
-void UsageFault_Handler(void)   __attribute__((weak, alias("Default_Handler")));
-void SVC_Handler(void)          __attribute__((weak, alias("Default_Handler")));
-void DebugMon_Handler(void)     __attribute__((weak, alias("Default_Handler")));
-void PendSV_Handler(void)       __attribute__((weak, alias("Default_Handler")));
-void SysTick_Handler(void)      __attribute__((weak, alias("Default_Handler")));
+/* System Exception Handlers */
+void NMI_Handler(void)        __attribute__((weak, alias("Default_Handler")));
+void HardFault_Handler(void); // Implemented with assembly naked wrapper below
+void MemManage_Handler(void)  __attribute__((weak, alias("Default_Handler")));
+void BusFault_Handler(void)   __attribute__((weak, alias("Default_Handler")));
+void UsageFault_Handler(void) __attribute__((weak, alias("Default_Handler")));
+void SVC_Handler(void)        __attribute__((weak, alias("Default_Handler")));
+void DebugMon_Handler(void)   __attribute__((weak, alias("Default_Handler")));
+void PendSV_Handler(void)     __attribute__((weak, alias("Default_Handler")));
+void SysTick_Handler(void)    __attribute__((weak, alias("Default_Handler")));
 
-/* Prototipuri Întreruperi Periferice STM32F103 (Subset utilizat frecvent) */
-void WWDG_IRQHandler(void)      __attribute__((weak, alias("Default_Handler")));
-void PVD_IRQHandler(void)       __attribute__((weak, alias("Default_Handler")));
-void TAMPER_IRQHandler(void)    __attribute__((weak, alias("Default_Handler")));
-void RTC_IRQHandler(void)       __attribute__((weak, alias("Default_Handler")));
-void FLASH_IRQHandler(void)     __attribute__((weak, alias("Default_Handler")));
-void RCC_IRQHandler(void)       __attribute__((weak, alias("Default_Handler")));
-void EXTI0_IRQHandler(void)     __attribute__((weak, alias("Default_Handler")));
-void EXTI1_IRQHandler(void)     __attribute__((weak, alias("Default_Handler")));
-void EXTI2_IRQHandler(void)     __attribute__((weak, alias("Default_Handler")));
-void EXTI3_IRQHandler(void)     __attribute__((weak, alias("Default_Handler")));
-void EXTI4_IRQHandler(void)     __attribute__((weak, alias("Default_Handler")));
-void DMA1_Channel1_IRQHandler(void) __attribute__((weak, alias("Default_Handler")));
-void ADC1_2_IRQHandler(void)    __attribute__((weak, alias("Default_Handler")));
-void EXTI9_5_IRQHandler(void)   __attribute__((weak, alias("Default_Handler")));
-void TIM1_UP_IRQHandler(void)   __attribute__((weak, alias("Default_Handler")));
-void TIM2_IRQHandler(void)      __attribute__((weak, alias("Default_Handler")));
-void TIM3_IRQHandler(void)      __attribute__((weak, alias("Default_Handler")));
-void TIM4_IRQHandler(void)      __attribute__((weak, alias("Default_Handler")));
-void I2C1_EV_IRQHandler(void)   __attribute__((weak, alias("Default_Handler")));
-void SPI1_IRQHandler(void)      __attribute__((weak, alias("Default_Handler")));
-void USART1_IRQHandler(void)    __attribute__((weak, alias("Default_Handler")));
-void USART2_IRQHandler(void)    __attribute__((weak, alias("Default_Handler")));
-void USART3_IRQHandler(void)    __attribute__((weak, alias("Default_Handler")));
-void EXTI15_10_IRQHandler(void) __attribute__((weak, alias("Default_Handler")));
+/* Optional System Initialization Hook */
+void SystemInit(void)         __attribute__((weak));
+
+/* Peripheral Interrupt Service Routines (STM32F103 Medium/High-Density) */
+void WWDG_IRQHandler(void)               __attribute__((weak, alias("Default_Handler")));
+void PVD_IRQHandler(void)                __attribute__((weak, alias("Default_Handler")));
+void TAMPER_IRQHandler(void)             __attribute__((weak, alias("Default_Handler")));
+void RTC_IRQHandler(void)                __attribute__((weak, alias("Default_Handler")));
+void FLASH_IRQHandler(void)              __attribute__((weak, alias("Default_Handler")));
+void RCC_IRQHandler(void)                __attribute__((weak, alias("Default_Handler")));
+void EXTI0_IRQHandler(void)              __attribute__((weak, alias("Default_Handler")));
+void EXTI1_IRQHandler(void)              __attribute__((weak, alias("Default_Handler")));
+void EXTI2_IRQHandler(void)              __attribute__((weak, alias("Default_Handler")));
+void EXTI3_IRQHandler(void)              __attribute__((weak, alias("Default_Handler")));
+void EXTI4_IRQHandler(void)              __attribute__((weak, alias("Default_Handler")));
+void DMA1_Channel1_IRQHandler(void)      __attribute__((weak, alias("Default_Handler")));
+void DMA1_Channel2_IRQHandler(void)      __attribute__((weak, alias("Default_Handler")));
+void DMA1_Channel3_IRQHandler(void)      __attribute__((weak, alias("Default_Handler")));
+void DMA1_Channel4_IRQHandler(void)      __attribute__((weak, alias("Default_Handler")));
+void DMA1_Channel5_IRQHandler(void)      __attribute__((weak, alias("Default_Handler")));
+void DMA1_Channel6_IRQHandler(void)      __attribute__((weak, alias("Default_Handler")));
+void DMA1_Channel7_IRQHandler(void)      __attribute__((weak, alias("Default_Handler")));
+void ADC1_2_IRQHandler(void)             __attribute__((weak, alias("Default_Handler")));
+void USB_HP_CAN1_TX_IRQHandler(void)     __attribute__((weak, alias("Default_Handler")));
+void USB_LP_CAN1_RX0_IRQHandler(void)    __attribute__((weak, alias("Default_Handler")));
+void CAN1_RX1_IRQHandler(void)           __attribute__((weak, alias("Default_Handler")));
+void CAN1_SCE_IRQHandler(void)           __attribute__((weak, alias("Default_Handler")));
+void EXTI9_5_IRQHandler(void)            __attribute__((weak, alias("Default_Handler")));
+void TIM1_BRK_IRQHandler(void)           __attribute__((weak, alias("Default_Handler")));
+void TIM1_UP_IRQHandler(void)            __attribute__((weak, alias("Default_Handler")));
+void TIM1_TRG_COM_IRQHandler(void)       __attribute__((weak, alias("Default_Handler")));
+void TIM1_CC_IRQHandler(void)            __attribute__((weak, alias("Default_Handler")));
+void TIM2_IRQHandler(void)               __attribute__((weak, alias("Default_Handler")));
+void TIM3_IRQHandler(void)               __attribute__((weak, alias("Default_Handler")));
+void TIM4_IRQHandler(void)               __attribute__((weak, alias("Default_Handler")));
+void I2C1_EV_IRQHandler(void)            __attribute__((weak, alias("Default_Handler")));
+void I2C1_ER_IRQHandler(void)            __attribute__((weak, alias("Default_Handler")));
+void I2C2_EV_IRQHandler(void)            __attribute__((weak, alias("Default_Handler")));
+void I2C2_ER_IRQHandler(void)            __attribute__((weak, alias("Default_Handler")));
+void SPI1_IRQHandler(void)               __attribute__((weak, alias("Default_Handler")));
+void SPI2_IRQHandler(void)               __attribute__((weak, alias("Default_Handler")));
+void USART1_IRQHandler(void)             __attribute__((weak, alias("Default_Handler")));
+void USART2_IRQHandler(void)             __attribute__((weak, alias("Default_Handler")));
+void USART3_IRQHandler(void)             __attribute__((weak, alias("Default_Handler")));
+void EXTI15_10_IRQHandler(void)          __attribute__((weak, alias("Default_Handler")));
+void RTC_Alarm_IRQHandler(void)          __attribute__((weak, alias("Default_Handler")));
+void USBWakeUp_IRQHandler(void)          __attribute__((weak, alias("Default_Handler")));
 
 /* ========================================================================== */
-/*                       TABELUL DE VECTORI DE ÎNTRERUPERI                   */
+/*                         VECTOR TABLE DEFINITION                            */
 /* ========================================================================== */
 
-__attribute__((section(".isr_vector")))
+__attribute__((section(".isr_vector"), used, aligned(512)))
 void (* const g_pfnVectors[])(void) = {
-    (void (*)(void))&_estack,    /* 0x00: Stack Pointer Inițial               */
-    Reset_Handler,               /* 0x04: Reset Handler                       */
-    NMI_Handler,                 /* 0x08: NMI Handler                         */
-    HardFault_Handler,           /* 0x0C: Hard Fault Handler                  */
-    MemManage_Handler,           /* 0x10: MPU Fault Handler                   */
-    BusFault_Handler,            /* 0x14: Bus Fault Handler                   */
-    UsageFault_Handler,          /* 0x18: Usage Fault Handler                 */
-    0, 0, 0, 0,                  /* 0x1C - 0x28: Rezervat                      */
-    SVC_Handler,                 /* 0x2C: SVCall Handler                      */
-    DebugMon_Handler,            /* 0x30: Debug Monitor Handler               */
-    0,                           /* 0x34: Rezervat                            */
-    PendSV_Handler,              /* 0x38: PendSV Handler                      */
-    SysTick_Handler,             /* 0x3C: SysTick Handler                     */
+    (void (*)(void))(uintptr_t)&_estack,    /* Initial Stack Pointer (Casted cleanly via uintptr_t) */
+    Reset_Handler,                          /* Reset Handler */
+    NMI_Handler,                            /* NMI Handler */
+    HardFault_Handler,                      /* Hard Fault Handler */
+    MemManage_Handler,                      /* MPU Fault Handler */
+    BusFault_Handler,                       /* Bus Fault Handler */
+    UsageFault_Handler,                     /* Usage Fault Handler */
+    0, 0, 0, 0,                             /* Reserved */
+    SVC_Handler,                            /* SVCall Handler */
+    DebugMon_Handler,                       /* Debug Monitor Handler */
+    0,                                      /* Reserved */
+    PendSV_Handler,                         /* PendSV Handler */
+    SysTick_Handler,                        /* SysTick Handler */
 
     /* External Interrupts (STM32F103 Peripheral Vectors) */
-    WWDG_IRQHandler,             /* 0x40: Window Watchdog                     */
-    PVD_IRQHandler,              /* 0x44: PVD through EXTI Line               */
-    TAMPER_IRQHandler,           /* 0x48: Tamper                              */
-    RTC_IRQHandler,              /* 0x4C: RTC Global                          */
-    FLASH_IRQHandler,            /* 0x50: Flash Global                        */
-    RCC_IRQHandler,              /* 0x54: RCC Global                          */
-    EXTI0_IRQHandler,            /* 0x58: EXTI Line 0                         */
-    EXTI1_IRQHandler,            /* 0x5C: EXTI Line 1                         */
-    EXTI2_IRQHandler,            /* 0x60: EXTI Line 2                         */
-    EXTI3_IRQHandler,            /* 0x64: EXTI Line 3                         */
-    EXTI4_IRQHandler,            /* 0x68: EXTI Line 4                         */
-    DMA1_Channel1_IRQHandler,    /* 0x6C: DMA1 Channel 1                      */
-    0, 0, 0, 0, 0, 0,            /* 0x70 - 0x84: DMA Channels / Other         */
-    ADC1_2_IRQHandler,           /* 0x88: ADC1 and ADC2                       */
-    0, 0, 0, 0,                  /* 0x8C - 0x98: USB High / CAN               */
-    EXTI9_5_IRQHandler,          /* 0x9C: EXTI Line [9:5]                     */
-    TIM1_UP_IRQHandler,          /* 0xA0: TIM1 Update                         */
-    0, 0,                        /* 0xA4 - 0xA8: TIM1 Trigger / CC            */
-    TIM2_IRQHandler,             /* 0xAC: TIM2 Global                         */
-    TIM3_IRQHandler,             /* 0xB0: TIM3 Global                         */
-    TIM4_IRQHandler,             /* 0xB4: TIM4 Global                         */
-    I2C1_EV_IRQHandler,          /* 0xB8: I2C1 Event                          */
-    0, 0, 0,                     /* 0xBC - 0xC4: I2C1 Error / SPI             */
-    SPI1_IRQHandler,             /* 0xC8: SPI1 Global                         */
-    0,                           /* 0xCC: SPI2 Global                         */
-    USART1_IRQHandler,           /* 0xD0: USART1 Global                       */
-    USART2_IRQHandler,           /* 0xD4: USART2 Global                       */
-    USART3_IRQHandler,           /* 0xD8: USART3 Global                       */
-    EXTI15_10_IRQHandler         /* 0xDC: EXTI Line [15:10]                   */
+    WWDG_IRQHandler,                        /* Window Watchdog */
+    PVD_IRQHandler,                         /* PVD through EXTI Line detect */
+    TAMPER_IRQHandler,                      /* Tamper */
+    RTC_IRQHandler,                         /* RTC */
+    FLASH_IRQHandler,                       /* Flash */
+    RCC_IRQHandler,                         /* RCC */
+    EXTI0_IRQHandler,                       /* EXTI Line 0 */
+    EXTI1_IRQHandler,                       /* EXTI Line 1 */
+    EXTI2_IRQHandler,                       /* EXTI Line 2 */
+    EXTI3_IRQHandler,                       /* EXTI Line 3 */
+    EXTI4_IRQHandler,                       /* EXTI Line 4 */
+    DMA1_Channel1_IRQHandler,               /* DMA1 Channel 1 */
+    DMA1_Channel2_IRQHandler,               /* DMA1 Channel 2 */
+    DMA1_Channel3_IRQHandler,               /* DMA1 Channel 3 */
+    DMA1_Channel4_IRQHandler,               /* DMA1 Channel 4 */
+    DMA1_Channel5_IRQHandler,               /* DMA1 Channel 5 */
+    DMA1_Channel6_IRQHandler,               /* DMA1 Channel 6 */
+    DMA1_Channel7_IRQHandler,               /* DMA1 Channel 7 */
+    ADC1_2_IRQHandler,                      /* ADC1 & ADC2 */
+    USB_HP_CAN1_TX_IRQHandler,              /* USB High Priority / CAN1 TX */
+    USB_LP_CAN1_RX0_IRQHandler,             /* USB Low Priority / CAN1 RX0 */
+    CAN1_RX1_IRQHandler,                    /* CAN1 RX1 */
+    CAN1_SCE_IRQHandler,                    /* CAN1 SCE */
+    EXTI9_5_IRQHandler,                     /* EXTI Line 9..5 */
+    TIM1_BRK_IRQHandler,                    /* TIM1 Break */
+    TIM1_UP_IRQHandler,                     /* TIM1 Update */
+    TIM1_TRG_COM_IRQHandler,                /* TIM1 Trigger & Commutation */
+    TIM1_CC_IRQHandler,                     /* TIM1 Capture Compare */
+    TIM2_IRQHandler,                        /* TIM2 */
+    TIM3_IRQHandler,                        /* TIM3 */
+    TIM4_IRQHandler,                        /* TIM4 */
+    I2C1_EV_IRQHandler,                     /* I2C1 Event */
+    I2C1_ER_IRQHandler,                     /* I2C1 Error */
+    I2C2_EV_IRQHandler,                     /* I2C2 Event */
+    I2C2_ER_IRQHandler,                     /* I2C2 Error */
+    SPI1_IRQHandler,                        /* SPI1 */
+    SPI2_IRQHandler,                        /* SPI2 */
+    USART1_IRQHandler,                      /* USART1 */
+    USART2_IRQHandler,                      /* USART2 */
+    USART3_IRQHandler,                      /* USART3 */
+    EXTI15_10_IRQHandler,                   /* EXTI Line 15..10 */
+    RTC_Alarm_IRQHandler,                   /* RTC Alarm through EXTI Line */
+    USBWakeUp_IRQHandler                    /* USB Wakeup through EXTI Line */
 };
 
 /* ========================================================================== */
-/*                       IMPLEMENTARE RESET HANDLER                           */
+/*                         SYSTEM RESET IMPLEMENTATION                        */
 /* ========================================================================== */
 
-/**
- * @brief  Punctul de intrare primar la boot hardware.
- * @details Inițializează secțiunile memoriei RAM (.data și .bss) și
- *          transferă controlul către codul de aplicație (main).
- */
 void Reset_Handler(void)
 {
-    /* 1. Copierea secțiunii .data din FLASH în RAM */
-    uint32_t size = (uintptr_t)&_edata - (uintptr_t)&_sdata;
-    uint8_t *pDst = (uint8_t *)&_sdata;
-    uint8_t *pSrc = (uint8_t *)&_sidata;
-
-    for (uint32_t i = 0; i < size; i++)
-    {
-        *pDst++ = *pSrc++;
-    }
-
-    /* 2. Inițializarea secțiunii .bss în RAM cu valoarea 0 */
-    size = (uintptr_t)&_ebss - (uintptr_t)&_sbss;
-    pDst = (uint8_t *)&_sbss;
-
-    for (uint32_t i = 0; i < size; i++)
-    {
-        *pDst++ = 0;
-    }
-
-    /* 3. Apel de sistem opțional pentru configurarea Clocks/PLL (dacă există) */
-    if (SystemInit)
+    /* 1. Optional System Init Call */
+    if (SystemInit != 0)
     {
         SystemInit();
     }
 
-    /* 4. Trecerea la execuția aplicației principale */
-    main();
+    /* 2. Fast 32-bit Word Copy for .data Section Initialization */
+    uint32_t *pSrc = (uint32_t *)&_sidata;
+    uint32_t *pDst = (uint32_t *)&_sdata;
 
-    /* 5. Trap de siguranță în caz de ieșire neprevăzută din main() */
+    while (pDst < (uint32_t *)&_edata)
+    {
+        *pDst++ = *pSrc++;
+    }
+
+    /* 3. Fast 32-bit Word Zeroing for .bss Section */
+    pDst = (uint32_t *)&_sbss;
+    while (pDst < (uint32_t *)&_ebss)
+    {
+        *pDst++ = 0U;
+    }
+
+    /* 4. Execute C Static Initializers / Constructors */
+    __libc_init_array();
+
+    /* 5. Jump to Application Main */
+    (void)main();
+
+    /* 6. Production Safety Net: Software System Reset if main() returns */
+    *(volatile uint32_t *)0xE000ED0C = (0x5FAU << 16) | (1U << 2);
+
     while (1)
     {
-        __asm__("NOP");
+        __asm__ volatile ("nop");
     }
 }
 
-/**
- * @brief  Handler implicit pentru excepții neasociate.
- */
+/* ========================================================================== */
+/*                    HARDFAULT DIAGNOSTIC CAPTURE ENGINE                     */
+/* ========================================================================== */
+
+void __attribute__((naked)) HardFault_Handler(void)
+{
+    __asm__ volatile (
+        " tst lr, #4                                    \n"
+        " ite eq                                        \n"
+        " mrseq r0, msp                                 \n"
+        " mrsne r0, psp                                 \n"
+        " ldr r1, [r0, #24]                             \n"
+        " b HardFault_Handler_C                         \n"
+    );
+}
+
+void HardFault_Handler_C(uint32_t *pulFaultArgs)
+{
+    volatile uint32_t r0  = pulFaultArgs[0];
+    volatile uint32_t r1  = pulFaultArgs[1];
+    volatile uint32_t r2  = pulFaultArgs[2];
+    volatile uint32_t r3  = pulFaultArgs[3];
+    volatile uint32_t r12 = pulFaultArgs[4];
+    volatile uint32_t lr  = pulFaultArgs[5];
+    volatile uint32_t pc  = pulFaultArgs[6];
+    volatile uint32_t psr = pulFaultArgs[7];
+
+    (void)r0; (void)r1; (void)r2; (void)r3; (void)r12; (void)lr; (void)pc; (void)psr;
+
+    *(volatile uint32_t *)0xE000ED0C = (0x5FAU << 16) | (1U << 2);
+
+    while (1);
+}
+
 void Default_Handler(void)
 {
     while (1)
     {
-        __asm__("NOP");
+        __asm__ volatile ("nop");
     }
 }

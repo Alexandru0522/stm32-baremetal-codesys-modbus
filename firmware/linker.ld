@@ -1,19 +1,19 @@
-/**
- * @file    stm32f103c8tx_flash.ld
- * @brief   Linker script for STM32F103C8Tx (Cortex-M3, 64KB FLASH, 20KB RAM)
- * @note    Industry-standard GNU LD script with C/C++ init arrays and RAM assertion.
+/*
+ * @file    stm32f103.ld
+ * @brief   Production GNU Linker Script for STM32F103 (64KB Flash, 20KB RAM)
+ * @author  Turcu Alexandru-Costin
+ * @date    2026
  */
 
 ENTRY(Reset_Handler)
 
-/* Adresa de start a stivei (Top of RAM: 0x20000000 + 20KB = 0x20005000) */
+/* Top of RAM (0x20000000 + 20K = 0x20005000) */
 _estack = ORIGIN(RAM) + LENGTH(RAM);
 
-/* Rezervare minimă garantată pentru Heap și Stack (previne RAM overflow la link-time) */
+/* Minimum required sizes for linker memory check */
 _Min_Heap_Size  = 0x200; /* 512 Bytes */
 _Min_Stack_Size = 0x400; /* 1024 Bytes */
 
-/* Maparea blocurilor fizice de memorie conforme datasheet-ului STM32F103C8 */
 MEMORY
 {
   FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = 64K
@@ -22,7 +22,7 @@ MEMORY
 
 SECTIONS
 {
-  /* Tabelul de vectori de întrerupere - Mapped la adresa de offset 0x0 în FLASH */
+  /* Vector table placed at start of Flash (Naturally 256-byte aligned for VTOR) */
   .isr_vector :
   {
     . = ALIGN(4);
@@ -30,89 +30,91 @@ SECTIONS
     . = ALIGN(4);
   } >FLASH
 
-  /* Codul instrucțiunilor (Program Code) și constantele Read-Only (.rodata) */
+  /* Application code and read-only data */
   .text :
   {
     . = ALIGN(4);
     *(.text)
     *(.text.*)
-    *(.rodata)
-    *(.rodata.*)
-    *(.glue_7)
-    *(.glue_7t)
+    *(.glue_7)         /* Glue arm to thumb code */
+    *(.glue_7t)        /* Glue thumb to arm code */
     *(.eh_frame)
 
     KEEP (*(.init))
     KEEP (*(.fini))
 
     . = ALIGN(4);
-    _etext = .;        /* Simbol exportat: Sfârșitul secțiunii .text */
+    _etext = .;        /* End of text section */
   } >FLASH
 
-  /* Tabelele de Unwinding pentru ARM Exception Handling / Debugging */
-  .ARM.extab :
+  /* Read-only constant data */
+  .rodata :
   {
-    *(.ARM.extab* .gnu.linkonce.armextab.*)
+    . = ALIGN(4);
+    *(.rodata)
+    *(.rodata.*)
+    . = ALIGN(4);
   } >FLASH
 
-  .ARM.exidx :
-  {
-    __exidx_start = .;
-    *(.ARM.exidx* .gnu.linkonce.armexidx.*)
-    __exidx_end = .;
-  } >FLASH
-
-  /* Secțiuni de inițializare C/C++ (Constructori globali / Newlib runtime) */
+  /* C/C++ Static Constructor Initialization Tables */
   .preinit_array :
   {
+    . = ALIGN(4);
     PROVIDE_HIDDEN (__preinit_array_start = .);
     KEEP (*(.preinit_array*))
     PROVIDE_HIDDEN (__preinit_array_end = .);
+    . = ALIGN(4);
   } >FLASH
 
   .init_array :
   {
+    . = ALIGN(4);
     PROVIDE_HIDDEN (__init_array_start = .);
     KEEP (*(SORT(.init_array.*)))
     KEEP (*(.init_array*))
     PROVIDE_HIDDEN (__init_array_end = .);
+    . = ALIGN(4);
   } >FLASH
 
   .fini_array :
   {
+    . = ALIGN(4);
     PROVIDE_HIDDEN (__fini_array_start = .);
     KEEP (*(SORT(.fini_array.*)))
     KEEP (*(.fini_array*))
     PROVIDE_HIDDEN (__fini_array_end = .);
+    . = ALIGN(4);
   } >FLASH
 
-  /* Adresa de încărcare din FLASH pentru secțiunea .data */
+  /* Address in Flash where initialized data values are stored */
   _sidata = LOADADDR(.data);
 
-  /* Variabile inițializate: stocate în FLASH, relocate în RAM la pornire de Reset_Handler */
+  /* Initialized data section loaded into RAM at boot */
   .data :
   {
     . = ALIGN(4);
-    _sdata = .;        /* Simbol exportat: Inceput .data în RAM */
+    _sdata = .;        /* Start of .data in RAM */
     *(.data)
     *(.data.*)
     . = ALIGN(4);
-    _edata = .;        /* Simbol exportat: Sfârșit .data în RAM */
+    _edata = .;        /* End of .data in RAM */
   } >RAM AT> FLASH
 
-  /* Variabile neinițializate (Zero-initialized Data) - curățate în RAM la boot */
+  /* Uninitialized data section cleared to zero at boot */
   .bss :
   {
     . = ALIGN(4);
-    _sbss = .;         /* Simbol exportat: Inceput .bss în RAM */
+    _sbss = .;         /* Start of .bss in RAM */
+    __bss_start__ = _sbss;
     *(.bss)
     *(.bss.*)
     *(COMMON)
     . = ALIGN(4);
-    _ebss = .;         /* Simbol exportat: Sfârșit .bss în RAM */
+    _ebss = .;         /* End of .bss in RAM */
+    __bss_end__ = _ebss;
   } >RAM
 
-  /* Verificare de siguranță la nivel de Linker pentru spațiul Heap și Stack */
+  /* Reserve space for stack and heap to prevent RAM overflow */
   ._user_heap_stack :
   {
     . = ALIGN(8);
@@ -123,11 +125,17 @@ SECTIONS
     . = ALIGN(8);
   } >RAM
 
-  /* Eliminare simboluri neutilizate din librăriile standard C */
+  /* Linker-time assertion: Throws build error if static RAM allocations overflow boundary */
+  ASSERT(ORIGIN(RAM) + LENGTH(RAM) >= (_ebss + _Min_Heap_Size + _Min_Stack_Size),
+         "ERROR: SRAM overflowed! Static data (.data + .bss) plus minimum Heap & Stack exceeds 20KB RAM limit.")
+
+  /* Discard unused compiler exception unwinding sections */
   /DISCARD/ :
   {
-    libc.a (*)
-    libm.a (*)
-    libgcc.a (*)
+    libc.a ( * )
+    libm.a ( * )
+    libgcc.a ( * )
+    *(.ARM.extab* .gnu.linkonce.armextab.*)
+    *(.ARM.exidx*)
   }
 }
