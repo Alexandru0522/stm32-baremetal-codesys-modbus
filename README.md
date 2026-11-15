@@ -15,7 +15,7 @@ An industrial automation, closed-loop climate regulation, and smart daylight-har
 
 | Full Breadboard Setup | Sensor Acquisition Stage | Actuator & Safety Stage |
 | :---: | :---: | :---: |
-| ![Breadboard Topview](media/breadboard1) | ![Breadboard Overview](media/breadboard2) | ![Breadboard Sideview](media/breadboard3) |
+| ![Breadboard Topview](media/breadboard1.jpg) | ![Breadboard Overview](media/breadboard2.jpg) | ![Breadboard Sideview](media/breadboard3.jpg) |
 | *STM32 controller, power rails, and field wiring* | *NTC thermistor, MQ gas sensor, LDR, and setpoint potentiometer* | *PWM cooling fan, dual LED zones, buzzer, and active-low E-Stop* |
 
 ---
