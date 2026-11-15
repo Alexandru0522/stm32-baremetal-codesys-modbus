@@ -6,7 +6,7 @@ An industrial automation, closed-loop climate regulation, and smart daylight-har
 
 ## HMI Dashboard Preview
 
-![CODESYS Visualization HMI](/home/alexandru/dev/embedded/stm32-codeysys-modbus/media/hmi.png)
+![CODESYS Visualization HMI](media/hmi.png)
 *CODESYS HMI showing real-time second-resolution trend graphs, system state supervision, manual override sliders, and adaptive Dark/Light ambient theming.*
 
 ---
@@ -15,7 +15,7 @@ An industrial automation, closed-loop climate regulation, and smart daylight-har
 
 | Full Breadboard Setup | Sensor Acquisition Stage | Actuator & Safety Stage |
 | :---: | :---: | :---: |
-| ![Breadboard Topview](/home/alexandru/dev/embedded/stm32-codeysys-modbus/media/breadboard1) | ![Breadboard Overview](/home/alexandru/dev/embedded/stm32-codeysys-modbus/media/breadboard2) | ![Breadboard Sideview](/home/alexandru/dev/embedded/stm32-codeysys-modbus/media/breadboard3) |
+| ![Breadboard Topview](media/breadboard1) | ![Breadboard Overview](media/breadboard2) | ![Breadboard Sideview](media/breadboard3) |
 | *STM32 controller, power rails, and field wiring* | *NTC thermistor, MQ gas sensor, LDR, and setpoint potentiometer* | *PWM cooling fan, dual LED zones, buzzer, and active-low E-Stop* |
 
 ---
